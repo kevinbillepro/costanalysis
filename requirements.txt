@@ -1,0 +1,7 @@
+streamlit
+pandas
+matplotlib
+reportlab
+azure-identity
+azure-mgmt-advisor
+azure-mgmt-resource
