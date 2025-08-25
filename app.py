@@ -11,10 +11,10 @@ from reportlab.lib import colors
 from azure.identity import ClientSecretCredential
 from azure.mgmt.advisor import AdvisorManagementClient
 from azure.mgmt.resource import SubscriptionClient
-# from azure.mgmt.costmanagement import CostManagementClient  # décommenter pour vraie API
+from azure.mgmt.costmanagement import CostManagementClient
 
 # --------------------------
-# 1. Connexion Azure via secrets
+# 1. Connexion Azure
 # --------------------------
 tenant_id = st.secrets["AZURE_TENANT_ID"]
 client_id = st.secrets["AZURE_CLIENT_ID"]
@@ -33,8 +33,8 @@ sub_client = SubscriptionClient(credential)
 subscriptions = list(sub_client.subscriptions.list())
 subscription_dict = {sub.display_name: sub.subscription_id for sub in subscriptions}
 
-st.title("☁️ Azure Advisor + Analyse Coûts")
-st.write("Sélectionnez une subscription pour générer un rapport avec recommandations et coûts.")
+st.title("☁️ Azure Advisor + Analyse Coûts (Production)")
+st.write("Sélectionnez une subscription pour générer un rapport avec recommandations et coûts réels.")
 
 selected_name = st.selectbox("Choisir une subscription :", list(subscription_dict.keys()))
 subscription_id = subscription_dict[selected_name]
@@ -57,28 +57,50 @@ for rec in advisor_client.recommendations.list():
 df_recs = pd.DataFrame(recs, columns=["Catégorie", "Problème", "Solution", "Impact", "Ressource"])
 
 # --------------------------
-# 4. Récupération des coûts (simulation)
+# 4. Récupération coûts réels
 # --------------------------
-# Pour vraie API :
-# cost_client = CostManagementClient(credential)
-# results = cost_client.query.usage(scope, query)
+cost_client = CostManagementClient(credential)
+scope = f"/subscriptions/{subscription_id}"
 
-# Simulation pour démo
-import random
-df_recs["Coût actuel (€)"] = [round(random.uniform(50, 500), 2) for _ in range(len(df_recs))]
-df_recs["Économie potentielle (€)"] = df_recs["Coût actuel (€)"] * 0.3  # estimation 30% économie
+# Exemple : coûts des 30 derniers jours
+query = {
+    "type": "ActualCost",
+    "timeframe": "MonthToDate",
+    "dataset": {
+        "granularity": "None",
+        "grouping": [{"type": "Dimension", "name": "ResourceId"}],
+        "aggregation": {"totalCost": {"name": "PreTaxCost", "function": "Sum"}}
+    }
+}
+
+results = cost_client.query.usage(scope, query)
+
+# Convertir en DataFrame
+costs = []
+for row in results.rows:
+    resource_id = row[0]
+    total_cost = float(row[1])
+    costs.append([resource_id, total_cost])
+
+df_costs = pd.DataFrame(costs, columns=["Ressource", "Coût actuel (€)"])
 
 # --------------------------
-# 5. Affichage tableau
+# 5. Fusion Advisor + Coût
+# --------------------------
+df_final = pd.merge(df_recs, df_costs, on="Ressource", how="left")
+df_final["Économie potentielle (€)"] = df_final["Coût actuel (€)"] * 0.3  # estimation 30%
+
+# --------------------------
+# 6. Affichage tableau
 # --------------------------
 st.subheader(f"📊 Recommandations & Coûts - {selected_name}")
-st.dataframe(df_recs)
+st.dataframe(df_final)
 
 # --------------------------
-# 6. Graphique
+# 7. Graphique
 # --------------------------
 fig, ax = plt.subplots()
-df_recs.groupby("Catégorie")["Économie potentielle (€)"].sum().plot(
+df_final.groupby("Catégorie")["Économie potentielle (€)"].sum().plot(
     kind="bar", ax=ax, color="green"
 )
 ax.set_title("Économie potentielle par catégorie")
@@ -86,13 +108,13 @@ ax.set_ylabel("€")
 st.pyplot(fig)
 
 # --------------------------
-# 7. Génération PDF
+# 8. Génération PDF
 # --------------------------
 def generate_pdf(dataframe, subscription_name):
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     c.setFont("Helvetica-Bold", 16)
-    c.drawString(80, 800, f"Rapport Azure Advisor + Coûts")
+    c.drawString(80, 800, f"Rapport Azure Advisor + Coûts Réels")
     c.setFont("Helvetica", 12)
     c.drawString(80, 780, f"Subscription : {subscription_name}")
 
@@ -118,7 +140,7 @@ def generate_pdf(dataframe, subscription_name):
     buffer.seek(0)
     return buffer
 
-pdf_bytes = generate_pdf(df_recs, selected_name)
+pdf_bytes = generate_pdf(df_final, selected_name)
 
 st.download_button(
     label="📥 Télécharger le rapport PDF",
