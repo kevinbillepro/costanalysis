@@ -13,7 +13,7 @@ from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
 from datetime import datetime, timedelta
 
-st.title("Azure – Recommandations & Coûts (Multi-subscriptions, PDF corrigé)")
+st.title("Azure – Recommandations & Coûts (Multi-subscriptions, coûts arrondis)")
 
 # ---- Récupération des subscriptions avec cache ----
 @st.cache_data(ttl=3600)
@@ -87,15 +87,20 @@ def get_azure_data(selected_subs, sub_options):
                 },
             )
             for row in cost_query.rows:
-                cost_data_all.append([sub_name, row[0], row[1]])
+                # Arrondi à 2 chiffres directement ici
+                cost_data_all.append([sub_name, row[0], round(row[1], 2)])
         except Exception as e:
             print(f"Erreur sur subscription {sub_name}: {e}")
 
         time.sleep(2)  # 👈 pause 2 sec pour éviter 429
 
     df_recs = pd.DataFrame(advisor_recs, columns=["Subscription", "Catégorie", "Problème", "Solution", "Impact", "Resource Group"])
-    df_costs = pd.DataFrame(cost_data_all, columns=["Subscription","Coût (€)", "Resource Group"])
-     return df_recs, df_costs
+    df_costs = pd.DataFrame(cost_data_all, columns=["Subscription", "Resource Group", "Coût (€)"])
+    
+    # Sécurité : s'assurer que les coûts sont arrondis à 2 chiffres
+    df_costs["Coût (€)"] = df_costs["Coût (€)"].round(2)
+    
+    return df_recs, df_costs
 
 # ---- Bouton Analyse ----
 if st.button("Analyser Azure"):
@@ -138,7 +143,7 @@ if st.button("Analyser Azure"):
                 c.drawString(50, 740, f"Nombre de Resource Groups facturés : {df_costs['Resource Group'].nunique()}")
                 c.drawString(50, 725, f"Coût total (30j) : {df_costs['Coût (€)'].sum():.2f} €")
 
-                # Tableau Recs – colonnes forcées dans le bon ordre
+                # Tableau Recs
                 rec_columns_order = ["Subscription","Catégorie","Problème","Solution","Impact","Resource Group"]
                 table_recs = Table([rec_columns_order] + df_recs[rec_columns_order].values.tolist(), colWidths=[80,70,120,120,60,70])
                 table_recs.setStyle(TableStyle([
@@ -151,9 +156,13 @@ if st.button("Analyser Azure"):
                 table_recs.wrapOn(c,50,600)
                 table_recs.drawOn(c,50,500)
 
-                # Tableau Coûts – colonnes forcées
-                cost_columns_order = ["Subscription","Coût (€)","Resource Group"]
-                table_costs = Table([cost_columns_order] + df_costs[cost_columns_order].values.tolist(), colWidths=[100,150,100])
+                # Tableau Coûts
+                cost_columns_order = ["Subscription","Resource Group","Coût (€)"]
+                # Formatage des coûts en string avec 2 décimales pour PDF
+                df_costs_pdf = df_costs.copy()
+                df_costs_pdf["Coût (€)"] = df_costs_pdf["Coût (€)"].map(lambda x: f"{x:.2f}")
+                
+                table_costs = Table([cost_columns_order] + df_costs_pdf[cost_columns_order].values.tolist(), colWidths=[100,150,100])
                 table_costs.setStyle(TableStyle([
                     ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#27AE60")),
                     ("TEXTCOLOR",(0,0),(-1,0),colors.white),
