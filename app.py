@@ -10,6 +10,7 @@ from reportlab.pdfgen import canvas
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
 from datetime import date, timedelta
+from azure.mgmt.resource import SubscriptionClient
 
 st.title("Azure – Recommandations & Coûts (Multi-subscriptions)")
 
