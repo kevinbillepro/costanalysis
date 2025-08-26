@@ -11,10 +11,11 @@ from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
-from datetime import datetime, timedelta
+from datetime import datetime
+import calendar
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-st.title("Azure – Recommandations & Coûts (Optimisé)")
+st.title("Azure – Recommandations & Coûts (Optimisé par mois)")
 
 # ---- Récupération des subscriptions avec cache ----
 @st.cache_data(ttl=3600)
@@ -37,9 +38,26 @@ selected_names = st.multiselect(
 )
 selected_subs = [sub_options[name] for name in selected_names]
 
+# ---- Sélection de mois et année ----
+current_year = datetime.utcnow().year
+years = [current_year-1, current_year]
+months = list(range(1, 13))
+
+selected_year = st.selectbox("Sélectionnez l'année", years, index=1)
+selected_month = st.selectbox("Sélectionnez le mois", months, index=datetime.utcnow().month-1)
+
+start_date = datetime(selected_year, selected_month, 1)
+end_day = calendar.monthrange(selected_year, selected_month)[1]
+end_date = datetime(selected_year, selected_month, end_day)
+
+start_date_str = start_date.replace(microsecond=0).isoformat() + "Z"
+end_date_str = end_date.replace(microsecond=0).isoformat() + "Z"
+
+st.write(f"Analyse des coûts pour : {calendar.month_name[selected_month]} {selected_year}")
+
 # ---- Fonction pour une subscription (cache individuel) ----
 @st.cache_data(ttl=1800)
-def get_subscription_data(sub_id, sub_name):
+def get_subscription_data(sub_id, sub_name, start_date_str, end_date_str):
     credential = ClientSecretCredential(
         tenant_id=st.secrets["AZURE_TENANT_ID"],
         client_id=st.secrets["AZURE_CLIENT_ID"],
@@ -64,17 +82,13 @@ def get_subscription_data(sub_id, sub_name):
 
     # ---- Cost Management
     cost_client = CostManagementClient(credential)
-    today = datetime.utcnow()
-    start_date = (today - timedelta(days=30)).replace(microsecond=0).isoformat() + "Z"
-    end_date = today.replace(microsecond=0).isoformat() + "Z"
-
     try:
         cost_query = cost_client.query.usage(
             scope=f"/subscriptions/{sub_id}",
             parameters={
                 "type": "ActualCost",
                 "timeframe": "Custom",
-                "timePeriod": {"from": start_date, "to": end_date},
+                "timePeriod": {"from": start_date_str, "to": end_date_str},
                 "dataset": {
                     "granularity": "None",
                     "aggregation": {"totalCost": {"name": "PreTaxCost", "function": "Sum"}},
@@ -94,7 +108,7 @@ def get_subscription_data(sub_id, sub_name):
     except Exception as e:
         st.warning(f"Erreur subscription {sub_name}: {e}")
 
-    time.sleep(1)  # pause légère pour éviter 429
+    time.sleep(1)
     return advisor_recs, cost_data_all
 
 # ---- Analyse multi-subscriptions avec ThreadPool ----
@@ -108,40 +122,43 @@ if st.button("Analyser Azure"):
         progress_bar = st.progress(0)
         total = len(selected_subs)
 
-        # ---- Multi-threading léger (max 4 threads)
         with ThreadPoolExecutor(max_workers=4) as executor:
-            futures = {executor.submit(get_subscription_data, sub_id, next(name for name, sid in sub_options.items() if sid == sub_id)): sub_id for sub_id in selected_subs}
+            futures = {
+                executor.submit(get_subscription_data, sub_id,
+                                next(name for name, sid in sub_options.items() if sid == sub_id),
+                                start_date_str, end_date_str): sub_id
+                for sub_id in selected_subs
+            }
             for i, future in enumerate(as_completed(futures)):
                 recs, costs = future.result()
                 advisor_recs.extend(recs)
                 cost_data_all.extend(costs)
                 progress_bar.progress((i+1)/total)
 
-        # ---- Création des DataFrames ----
         df_recs = pd.DataFrame(advisor_recs, columns=["Subscription", "Catégorie", "Problème", "Solution", "Impact", "Resource Group"])
         df_costs = pd.DataFrame(cost_data_all, columns=["Subscription", "Resource Group", "Coût (€)"])
 
         st.subheader("Recommandations Azure Advisor")
         st.dataframe(df_recs)
 
-        st.subheader("Analyse des coûts (30 derniers jours)")
+        st.subheader(f"Analyse des coûts ({calendar.month_name[selected_month]} {selected_year})")
         st.dataframe(df_costs)
 
-        # ---- Total des coûts par subscription ----
+        # Total par subscription
         if not df_costs.empty:
             df_costs_sub = df_costs.groupby("Subscription")["Coût (€)"].sum().reset_index()
             df_costs_sub["Coût (€)"] = df_costs_sub["Coût (€)"].round(2)
-            st.subheader("Total des coûts par subscription (30 derniers jours)")
+            st.subheader("Total des coûts par subscription")
             st.dataframe(df_costs_sub)
         else:
             st.info("Aucune donnée de coût disponible pour le total par subscription.")
 
-        # ---- Graphiques ----
+        # Graphiques
         if not df_costs.empty:
             fig1, ax1 = plt.subplots()
             df_costs.groupby("Resource Group")["Coût (€)"].sum().sort_values(ascending=False).head(10).plot(kind="bar", ax=ax1)
             ax1.set_ylabel("Coût (€)")
-            ax1.set_title("Top Resource Groups par coût (30j)")
+            ax1.set_title(f"Top Resource Groups par coût ({calendar.month_name[selected_month]} {selected_year})")
             st.pyplot(fig1)
         else:
             st.info("Aucune donnée de coût disponible pour les graphiques.")
@@ -155,20 +172,19 @@ if st.button("Analyser Azure"):
         else:
             st.info("Aucune recommandation disponible pour les graphiques.")
 
-        # ---- Génération PDF ----
+        # PDF
         def generate_pdf(df_recs, df_costs):
             buffer = BytesIO()
             c = canvas.Canvas(buffer, pagesize=A4)
-
             c.setFont("Helvetica-Bold", 16)
-            c.drawString(80, 800, "Rapport Azure – Coûts & Recommandations")
+            c.drawString(80, 800, f"Rapport Azure – {calendar.month_name[selected_month]} {selected_year}")
             c.setFont("Helvetica", 12)
             c.drawString(50, 770, f"Nombre total de recommandations : {len(df_recs)}")
             c.drawString(50, 755, f"Nombre de Resource Groups impactés (recs) : {df_recs['Resource Group'].nunique()}")
             c.drawString(50, 740, f"Nombre de Resource Groups facturés : {df_costs['Resource Group'].nunique()}")
-            c.drawString(50, 725, f"Coût total (30j) : {df_costs['Coût (€)'].sum():.2f} €")
+            c.drawString(50, 725, f"Coût total : {df_costs['Coût (€)'].sum():.2f} €")
 
-            # ---- Tableau Recs
+            # Tableau recommandations
             if not df_recs.empty:
                 rec_columns_order = ["Subscription","Catégorie","Problème","Solution","Impact","Resource Group"]
                 table_recs = Table([rec_columns_order] + df_recs[rec_columns_order].values.tolist(), colWidths=[80,70,120,120,60,70])
@@ -182,7 +198,7 @@ if st.button("Analyser Azure"):
                 table_recs.wrapOn(c,50,600)
                 table_recs.drawOn(c,50,500)
 
-            # ---- Tableau Coûts
+            # Tableau coûts
             if not df_costs.empty:
                 cost_columns_order = ["Subscription","Resource Group","Coût (€)"]
                 df_costs_pdf = df_costs.copy()
@@ -206,6 +222,6 @@ if st.button("Analyser Azure"):
         st.download_button(
             label="📥 Télécharger le rapport PDF",
             data=pdf_bytes,
-            file_name="azure_report.pdf",
+            file_name=f"azure_report_{selected_year}_{selected_month}.pdf",
             mime="application/pdf"
         )
