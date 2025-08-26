@@ -12,8 +12,9 @@ from reportlab.pdfgen import canvas
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
 from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-st.title("Azure – Recommandations & Coûts (Final)")
+st.title("Azure – Recommandations & Coûts (Optimisé)")
 
 # ---- Récupération des subscriptions avec cache ----
 @st.cache_data(ttl=3600)
@@ -36,9 +37,9 @@ selected_names = st.multiselect(
 )
 selected_subs = [sub_options[name] for name in selected_names]
 
-# ---- Fonction principale avec cache ----
+# ---- Fonction pour une subscription (cache individuel) ----
 @st.cache_data(ttl=1800)
-def get_azure_data(selected_subs, sub_options):
+def get_subscription_data(sub_id, sub_name):
     credential = ClientSecretCredential(
         tenant_id=st.secrets["AZURE_TENANT_ID"],
         client_id=st.secrets["AZURE_CLIENT_ID"],
@@ -48,70 +49,77 @@ def get_azure_data(selected_subs, sub_options):
     advisor_recs = []
     cost_data_all = []
 
+    # ---- Advisor
+    advisor_client = AdvisorManagementClient(credential, sub_id)
+    for rec in advisor_client.recommendations.list():
+        resource_group = getattr(getattr(rec, "resource_metadata", None), "resource_group", "N/A")
+        advisor_recs.append([
+            sub_name,
+            rec.category,
+            rec.short_description.problem,
+            rec.short_description.solution,
+            rec.impact,
+            resource_group
+        ])
+
+    # ---- Cost Management
+    cost_client = CostManagementClient(credential)
     today = datetime.utcnow()
     start_date = (today - timedelta(days=30)).replace(microsecond=0).isoformat() + "Z"
     end_date = today.replace(microsecond=0).isoformat() + "Z"
 
-    for sub_id in selected_subs:
-        sub_name = next((name for name, sid in sub_options.items() if sid == sub_id), sub_id)
-
-        # ---- Advisor
-        advisor_client = AdvisorManagementClient(credential, sub_id)
-        for rec in advisor_client.recommendations.list():
-            resource_group = getattr(getattr(rec, "resource_metadata", None), "resource_group", "N/A")
-            advisor_recs.append([
-                sub_name,
-                rec.category,
-                rec.short_description.problem,
-                rec.short_description.solution,
-                rec.impact,
-                resource_group
-            ])
-
-        # ---- Cost Management
-        cost_client = CostManagementClient(credential)
-        try:
-            cost_query = cost_client.query.usage(
-                scope=f"/subscriptions/{sub_id}",
-                parameters={
-                    "type": "ActualCost",
-                    "timeframe": "Custom",
-                    "timePeriod": {"from": start_date, "to": end_date},
-                    "dataset": {
-                        "granularity": "None",
-                        "aggregation": {"totalCost": {"name": "PreTaxCost", "function": "Sum"}},
-                        "grouping": [{"type": "Dimension", "name": "ResourceGroupName"}],
-                    },
+    try:
+        cost_query = cost_client.query.usage(
+            scope=f"/subscriptions/{sub_id}",
+            parameters={
+                "type": "ActualCost",
+                "timeframe": "Custom",
+                "timePeriod": {"from": start_date, "to": end_date},
+                "dataset": {
+                    "granularity": "None",
+                    "aggregation": {"totalCost": {"name": "PreTaxCost", "function": "Sum"}},
+                    "grouping": [{"type": "Dimension", "name": "ResourceGroupName"}],
                 },
-            )
+            },
+        )
 
-            # ---- Traitement sécurisé des rows
-            for row in cost_query.rows:
-                rg_name = row[1] if row[1] else "N/A"
-                raw_cost = row[0]
-                try:
-                    cost_value = float(str(raw_cost).replace(",", ".").strip())
-                    cost_data_all.append([sub_name, rg_name, round(cost_value, 2)])
-                except (TypeError, ValueError):
-                    st.write(f"Ignored row {row} in subscription {sub_name}: not numeric")
-                    continue
+        for row in cost_query.rows:
+            rg_name = row[1] if row[1] else "N/A"
+            raw_cost = row[0]
+            try:
+                cost_value = float(str(raw_cost).replace(",", ".").strip())
+                cost_data_all.append([sub_name, rg_name, round(cost_value, 2)])
+            except (TypeError, ValueError):
+                continue
+    except Exception as e:
+        st.warning(f"Erreur subscription {sub_name}: {e}")
 
-        except Exception as e:
-            st.write(f"Erreur sur subscription {sub_name}: {e}")
+    time.sleep(1)  # pause légère pour éviter 429
+    return advisor_recs, cost_data_all
 
-        time.sleep(2)  # pause pour éviter 429
-
-    df_recs = pd.DataFrame(advisor_recs, columns=["Subscription", "Catégorie", "Problème", "Solution", "Impact", "Resource Group"])
-    df_costs = pd.DataFrame(cost_data_all, columns=["Subscription", "Resource Group", "Coût (€)"])
-    
-    return df_recs, df_costs
-
-# ---- Bouton Analyse ----
+# ---- Analyse multi-subscriptions avec ThreadPool ----
 if st.button("Analyser Azure"):
     if not selected_subs:
         st.warning("Veuillez sélectionner au moins une subscription.")
     else:
-        df_recs, df_costs = get_azure_data(selected_subs, sub_options)
+        advisor_recs = []
+        cost_data_all = []
+
+        progress_bar = st.progress(0)
+        total = len(selected_subs)
+
+        # ---- Multi-threading léger (max 4 threads)
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {executor.submit(get_subscription_data, sub_id, next(name for name, sid in sub_options.items() if sid == sub_id)): sub_id for sub_id in selected_subs}
+            for i, future in enumerate(as_completed(futures)):
+                recs, costs = future.result()
+                advisor_recs.extend(recs)
+                cost_data_all.extend(costs)
+                progress_bar.progress((i+1)/total)
+
+        # ---- Création des DataFrames ----
+        df_recs = pd.DataFrame(advisor_recs, columns=["Subscription", "Catégorie", "Problème", "Solution", "Impact", "Resource Group"])
+        df_costs = pd.DataFrame(cost_data_all, columns=["Subscription", "Resource Group", "Coût (€)"])
 
         st.subheader("Recommandations Azure Advisor")
         st.dataframe(df_recs)
