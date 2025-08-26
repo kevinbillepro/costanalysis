@@ -87,8 +87,8 @@ def get_azure_data(selected_subs, sub_options):
 
             # ---- Traitement sécurisé des rows
             for row in cost_query.rows:
-                rg_name = row[0] if row[0] else "N/A"
-                raw_cost = row[1]
+                rg_name = row[1] if row[1] else "N/A"
+                raw_cost = row[0]
                 try:
                     cost_value = float(str(raw_cost).replace(",", ".").strip())
                     cost_data_all.append([sub_name, rg_name, round(cost_value, 2)])
