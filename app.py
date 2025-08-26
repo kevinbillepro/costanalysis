@@ -119,6 +119,15 @@ if st.button("Analyser Azure"):
         st.subheader("Analyse des coûts (30 derniers jours)")
         st.dataframe(df_costs)
 
+        # ---- Total des coûts par subscription ----
+        if not df_costs.empty:
+            df_costs_sub = df_costs.groupby("Subscription")["Coût (€)"].sum().reset_index()
+            df_costs_sub["Coût (€)"] = df_costs_sub["Coût (€)"].round(2)
+            st.subheader("Total des coûts par subscription (30 derniers jours)")
+            st.dataframe(df_costs_sub)
+        else:
+            st.info("Aucune donnée de coût disponible pour le total par subscription.")
+
         # ---- Graphiques ----
         if not df_costs.empty:
             fig1, ax1 = plt.subplots()
