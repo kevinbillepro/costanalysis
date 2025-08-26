@@ -61,7 +61,7 @@ if st.button("Analyser Azure"):
 
             # ---- Cost Management (30 derniers jours)
             cost_client = CostManagementClient(credential)
-            today = date.today()
+            today = datetime.utcnow()
             start_date = (today - timedelta(days=30)).strftime("%Y-%m-%d")
             end_date = today.strftime("%Y-%m-%d")
 
