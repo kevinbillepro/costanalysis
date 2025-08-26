@@ -1,8 +1,9 @@
-streamlit
 pandas
+xlsxwriter
+openpyxl
 matplotlib
-reportlab
 azure-identity
 azure-mgmt-advisor
-azure-mgmt-resource
 azure-mgmt-costmanagement
+azure-mgmt-resource
+reportlab
