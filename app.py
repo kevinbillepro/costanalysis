@@ -9,7 +9,10 @@ from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
-from datetime import date, timedelta
+from datetime import datetime, timedelta
+today = datetime.utcnow()
+start_date = today - timedelta(days=30)
+end_date = today
 from azure.mgmt.resource import SubscriptionClient
 
 st.title("Azure – Recommandations & Coûts (Multi-subscriptions)")
