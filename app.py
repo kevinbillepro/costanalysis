@@ -13,7 +13,7 @@ from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
 from datetime import datetime, timedelta
 
-st.title("Azure – Recommandations & Coûts (Multi-subscriptions, noms)")
+st.title("Azure – Recommandations & Coûts (Multi-subscriptions, PDF corrigé)")
 
 # ---- Récupération des subscriptions avec cache ----
 @st.cache_data(ttl=3600)
@@ -138,10 +138,9 @@ if st.button("Analyser Azure"):
                 c.drawString(50, 740, f"Nombre de Resource Groups facturés : {df_costs['Resource Group'].nunique()}")
                 c.drawString(50, 725, f"Coût total (30j) : {df_costs['Coût (€)'].sum():.2f} €")
 
-                # Tableau Recs
-                c.setFont("Helvetica-Bold", 14)
-                c.drawString(50, 700, "Recommandations Azure Advisor")
-                table_recs = Table([df_recs.columns.tolist()] + df_recs.values.tolist(), colWidths=[80,70,120,120,60,70])
+                # Tableau Recs – colonnes forcées dans le bon ordre
+                rec_columns_order = ["Subscription","Catégorie","Problème","Solution","Impact","Resource Group"]
+                table_recs = Table([rec_columns_order] + df_recs[rec_columns_order].values.tolist(), colWidths=[80,70,120,120,60,70])
                 table_recs.setStyle(TableStyle([
                     ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#2E86C1")),
                     ("TEXTCOLOR",(0,0),(-1,0),colors.white),
@@ -152,10 +151,9 @@ if st.button("Analyser Azure"):
                 table_recs.wrapOn(c,50,600)
                 table_recs.drawOn(c,50,500)
 
-                # Tableau Coûts
-                c.setFont("Helvetica-Bold", 14)
-                c.drawString(50, 480, "Analyse des coûts (30 derniers jours)")
-                table_costs = Table([df_costs.columns.tolist()] + df_costs.values.tolist(), colWidths=[100,150,100])
+                # Tableau Coûts – colonnes forcées
+                cost_columns_order = ["Subscription","Resource Group","Coût (€)"]
+                table_costs = Table([cost_columns_order] + df_costs[cost_columns_order].values.tolist(), colWidths=[100,150,100])
                 table_costs.setStyle(TableStyle([
                     ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#27AE60")),
                     ("TEXTCOLOR",(0,0),(-1,0),colors.white),
