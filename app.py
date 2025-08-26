@@ -10,6 +10,7 @@ from reportlab.pdfgen import canvas
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
 from datetime import datetime, timedelta
+today = datetime.utcnow()
 from azure.mgmt.resource import SubscriptionClient
 
 st.title("Azure – Recommandations & Coûts (Multi-subscriptions)")
@@ -58,7 +59,7 @@ if st.button("Analyser Azure"):
 
             # ---- Cost Management (30 derniers jours)
             cost_client = CostManagementClient(credential)
-           today = datetime.utcnow()
+            today = datetime.utcnow()
             start_date = (today - timedelta(days=30)).replace(microsecond=0).isoformat() + "Z"
             end_date = today.replace(microsecond=0).isoformat() + "Z"
 
