@@ -87,7 +87,7 @@ def get_azure_data(selected_subs, sub_options):
                 },
             )
             for row in cost_query.rows:
-                # Arrondi à 2 chiffres directement ici
+                # On stocke en numérique arrondi à 2 chiffres
                 cost_data_all.append([sub_name, row[0], round(row[1], 2)])
         except Exception as e:
             print(f"Erreur sur subscription {sub_name}: {e}")
@@ -96,9 +96,6 @@ def get_azure_data(selected_subs, sub_options):
 
     df_recs = pd.DataFrame(advisor_recs, columns=["Subscription", "Catégorie", "Problème", "Solution", "Impact", "Resource Group"])
     df_costs = pd.DataFrame(cost_data_all, columns=["Subscription", "Resource Group", "Coût (€)"])
-    
-    # Sécurité : s'assurer que les coûts sont arrondis à 2 chiffres
-    df_costs["Coût (€)"] = df_costs["Coût (€)"].round(2)
     
     return df_recs, df_costs
 
@@ -156,12 +153,11 @@ if st.button("Analyser Azure"):
                 table_recs.wrapOn(c,50,600)
                 table_recs.drawOn(c,50,500)
 
-                # Tableau Coûts
+                # Tableau Coûts – on crée une version string pour PDF seulement
                 cost_columns_order = ["Subscription","Resource Group","Coût (€)"]
-                # Formatage des coûts en string avec 2 décimales pour PDF
                 df_costs_pdf = df_costs.copy()
-                df_costs_pdf["Coût (€)"] = df_costs_pdf["Coût (€)"].map(lambda x: f"{x:.2f}")
-                
+                df_costs_pdf["Coût (€)"] = df_costs_pdf["Coût (€)"].apply(lambda x: f"{x:.2f}")
+
                 table_costs = Table([cost_columns_order] + df_costs_pdf[cost_columns_order].values.tolist(), colWidths=[100,150,100])
                 table_costs.setStyle(TableStyle([
                     ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#27AE60")),
