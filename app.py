@@ -13,7 +13,7 @@ from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
 from datetime import datetime, timedelta
 
-st.title("Azure – Recommandations & Coûts (Multi-subscriptions, cache + sleep)")
+st.title("Azure – Recommandations & Coûts (Multi-subscriptions, noms)")
 
 # ---- Récupération des subscriptions avec cache ----
 @st.cache_data(ttl=3600)
@@ -24,20 +24,23 @@ def get_subscriptions():
         client_secret=st.secrets["AZURE_CLIENT_SECRET"]
     )
     sub_client = SubscriptionClient(credential)
-    return [sub.subscription_id for sub in sub_client.subscriptions.list()]
+    return [(sub.subscription_id, sub.display_name) for sub in sub_client.subscriptions.list()]
 
-subscriptions = get_subscriptions()
+subs = get_subscriptions()
+sub_options = {name: sub_id for sub_id, name in subs}  # dict nom → id
 
-# ---- Sélecteur de subscriptions ----
-selected_subs = st.multiselect(
+# ---- Sélecteur Streamlit ----
+selected_names = st.multiselect(
     "Sélectionnez les subscriptions à analyser",
-    options=subscriptions,
-    default=subscriptions
+    options=list(sub_options.keys()),
+    default=list(sub_options.keys())
 )
+
+selected_subs = [sub_options[name] for name in selected_names]  # on récupère les IDs
 
 # ---- Fonction principale pour Advisor + Coûts avec cache ----
 @st.cache_data(ttl=1800)
-def get_azure_data(selected_subs):
+def get_azure_data(selected_subs, sub_options):
     credential = ClientSecretCredential(
         tenant_id=st.secrets["AZURE_TENANT_ID"],
         client_id=st.secrets["AZURE_CLIENT_ID"],
@@ -52,12 +55,14 @@ def get_azure_data(selected_subs):
     end_date = today.replace(microsecond=0).isoformat() + "Z"
 
     for sub_id in selected_subs:
+        sub_name = next((name for name, sid in sub_options.items() if sid == sub_id), sub_id)
+
         # ---- Advisor
         advisor_client = AdvisorManagementClient(credential, sub_id)
         for rec in advisor_client.recommendations.list():
             resource_group = getattr(getattr(rec, "resource_metadata", None), "resource_group", "N/A")
             advisor_recs.append([
-                sub_id,
+                sub_name,
                 rec.category,
                 rec.short_description.problem,
                 rec.short_description.solution,
@@ -82,9 +87,9 @@ def get_azure_data(selected_subs):
                 },
             )
             for row in cost_query.rows:
-                cost_data_all.append([sub_id, row[0], row[1]])
+                cost_data_all.append([sub_name, row[0], row[1]])
         except Exception as e:
-            print(f"Erreur sur subscription {sub_id}: {e}")
+            print(f"Erreur sur subscription {sub_name}: {e}")
 
         time.sleep(2)  # 👈 pause 2 sec pour éviter 429
 
@@ -98,7 +103,7 @@ if st.button("Analyser Azure"):
         st.warning("Veuillez sélectionner au moins une subscription.")
     else:
         try:
-            df_recs, df_costs = get_azure_data(selected_subs)
+            df_recs, df_costs = get_azure_data(selected_subs, sub_options)
 
             # ---- Affichage ----
             st.subheader("Recommandations Azure Advisor")
@@ -136,7 +141,7 @@ if st.button("Analyser Azure"):
                 # Tableau Recs
                 c.setFont("Helvetica-Bold", 14)
                 c.drawString(50, 700, "Recommandations Azure Advisor")
-                table_recs = Table([df_recs.columns.tolist()] + df_recs.values.tolist(), colWidths=[70,70,120,120,60,70])
+                table_recs = Table([df_recs.columns.tolist()] + df_recs.values.tolist(), colWidths=[80,70,120,120,60,70])
                 table_recs.setStyle(TableStyle([
                     ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#2E86C1")),
                     ("TEXTCOLOR",(0,0),(-1,0),colors.white),
