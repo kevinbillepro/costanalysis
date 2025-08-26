@@ -16,9 +16,10 @@ import time
 st.title("Azure – Recommandations & Coûts (Multi-subscriptions, cache + sleep)")
 
 # 🔐 Lecture des secrets Streamlit
-tenant_id = st.secrets["azure"]["tenant_id"]
-client_id = st.secrets["azure"]["client_id"]
-client_secret = st.secrets["azure"]["client_secret"]
+tenant_id = st.secrets["AZURE_TENANT_ID"]
+client_id = st.secrets["AZURE_CLIENT_ID"]
+client_secret = st.secrets["AZURE_CLIENT_SECRET"]
+
 
 # 🔐 Connexion Azure AD
 credential = ClientSecretCredential(
