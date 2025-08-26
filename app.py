@@ -15,28 +15,20 @@ from datetime import datetime, timedelta
 
 st.title("Azure – Recommandations & Coûts (Multi-subscriptions, cache + sleep)")
 
-# --------------------------
-# 1. Connexion Azure via Service Principal
-# --------------------------
-tenant_id = st.secrets["AZURE_TENANT_ID"]
-client_id = st.secrets["AZURE_CLIENT_ID"]
-client_secret = st.secrets["AZURE_CLIENT_SECRET"]
-
-credential = ClientSecretCredential(
-    tenant_id=tenant_id,
-    client_id=client_id,
-    client_secret=client_secret
-)
-
 # ---- Récupération des subscriptions avec cache ----
 @st.cache_data(ttl=3600)
-def get_subscriptions(credential):
+def get_subscriptions():
+    credential = ClientSecretCredential(
+        tenant_id=st.secrets["AZURE_TENANT_ID"],
+        client_id=st.secrets["AZURE_CLIENT_ID"],
+        client_secret=st.secrets["AZURE_CLIENT_SECRET"]
+    )
     sub_client = SubscriptionClient(credential)
     return [sub.subscription_id for sub in sub_client.subscriptions.list()]
 
-subscriptions = get_subscriptions(credential)
+subscriptions = get_subscriptions()
 
-# ---- Sélecteur Streamlit pour limiter les subscriptions ----
+# ---- Sélecteur de subscriptions ----
 selected_subs = st.multiselect(
     "Sélectionnez les subscriptions à analyser",
     options=subscriptions,
@@ -45,7 +37,13 @@ selected_subs = st.multiselect(
 
 # ---- Fonction principale pour Advisor + Coûts avec cache ----
 @st.cache_data(ttl=1800)
-def get_azure_data(subscriptions, credential):
+def get_azure_data(selected_subs):
+    credential = ClientSecretCredential(
+        tenant_id=st.secrets["AZURE_TENANT_ID"],
+        client_id=st.secrets["AZURE_CLIENT_ID"],
+        client_secret=st.secrets["AZURE_CLIENT_SECRET"]
+    )
+
     advisor_recs = []
     cost_data_all = []
 
@@ -53,7 +51,7 @@ def get_azure_data(subscriptions, credential):
     start_date = (today - timedelta(days=30)).replace(microsecond=0).isoformat() + "Z"
     end_date = today.replace(microsecond=0).isoformat() + "Z"
 
-    for sub_id in subscriptions:
+    for sub_id in selected_subs:
         # ---- Advisor
         advisor_client = AdvisorManagementClient(credential, sub_id)
         for rec in advisor_client.recommendations.list():
@@ -100,7 +98,7 @@ if st.button("Analyser Azure"):
         st.warning("Veuillez sélectionner au moins une subscription.")
     else:
         try:
-            df_recs, df_costs = get_azure_data(selected_subs, credential)
+            df_recs, df_costs = get_azure_data(selected_subs)
 
             # ---- Affichage ----
             st.subheader("Recommandations Azure Advisor")
