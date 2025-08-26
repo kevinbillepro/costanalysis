@@ -152,7 +152,7 @@ if st.button("Analyser Azure"):
                 table_recs.drawOn(c,50,500)
 
                 # Tableau Coûts – colonnes forcées
-                cost_columns_order = ["Subscription","Resource Group","Coût (€)"]
+                cost_columns_order = ["Subscription","Coût (€)","Resource Group"]
                 table_costs = Table([cost_columns_order] + df_costs[cost_columns_order].values.tolist(), colWidths=[100,150,100])
                 table_costs.setStyle(TableStyle([
                     ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#27AE60")),
