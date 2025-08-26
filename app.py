@@ -1,3 +1,4 @@
+import time
 import streamlit as st
 import pandas as pd
 from azure.identity import ClientSecretCredential
