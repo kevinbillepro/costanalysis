@@ -164,4 +164,3 @@ if st.button("Analyser Azure"):
     except Exception as e:
         st.error(f"Erreur : {e}")
 
- time.sleep(2)  # 👈 pause 2 sec entre chaque appel
