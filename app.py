@@ -80,9 +80,7 @@ if st.button("Analyser Azure"):
 
             for row in cost_query.rows:
                 cost_data_all.append([sub_id, row[0], row[1]])
-                except Exception as e:
-            print(f"Erreur sur subscription {sub_id}: {e}")
-
+                
         time.sleep(2)  # 👈 pause 2 sec pour éviter 429
 
         # ---- DataFrames
