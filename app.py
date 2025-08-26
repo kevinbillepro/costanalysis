@@ -119,8 +119,7 @@ def generate_excel(df_costs):
         df_total = df_costs.groupby("Subscription")["Coût (€)"].sum().reset_index()
         df_total["Coût (€)"] = df_total["Coût (€)"].round(2)
         df_total.to_excel(writer, sheet_name="Total par subscription", index=False)
-        writer.save()
-        output.seek(0)
+    output.seek(0)
     return output
 
 # ---- Analyse multi-subscriptions avec ThreadPool ----
