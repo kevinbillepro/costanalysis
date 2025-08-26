@@ -88,10 +88,12 @@ def get_azure_data(selected_subs, sub_options):
             )
             for row in cost_query.rows:
                 try:
-                    cost_value = float(row[1])
+                    # Conversion sécurisée
+                    cost_value = float(str(row[1]).replace(",", ".").strip())
                     cost_data_all.append([sub_name, row[0], round(cost_value, 2)])
                 except (TypeError, ValueError):
-                    continue  # ignore invalid values
+                    print(f"Ignored row {row} in subscription {sub_name}")
+                    continue
 
         except Exception as e:
             print(f"Erreur sur subscription {sub_name}: {e}")
