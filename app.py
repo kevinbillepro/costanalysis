@@ -111,6 +111,18 @@ def get_subscription_data(sub_id, sub_name, start_date_str, end_date_str):
     time.sleep(1)
     return advisor_recs, cost_data_all
 
+# ---- Génération Excel ----
+def generate_excel(df_costs):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        df_costs.to_excel(writer, sheet_name="Coûts détaillés", index=False)
+        df_total = df_costs.groupby("Subscription")["Coût (€)"].sum().reset_index()
+        df_total["Coût (€)"] = df_total["Coût (€)"].round(2)
+        df_total.to_excel(writer, sheet_name="Total par subscription", index=False)
+        writer.save()
+        output.seek(0)
+    return output
+
 # ---- Analyse multi-subscriptions avec ThreadPool ----
 if st.button("Analyser Azure"):
     if not selected_subs:
@@ -150,8 +162,15 @@ if st.button("Analyser Azure"):
             df_costs_sub["Coût (€)"] = df_costs_sub["Coût (€)"].round(2)
             st.subheader("Total des coûts par subscription")
             st.dataframe(df_costs_sub)
-        else:
-            st.info("Aucune donnée de coût disponible pour le total par subscription.")
+
+            # Bouton Excel
+            excel_file = generate_excel(df_costs)
+            st.download_button(
+                label="📥 Télécharger le rapport Excel",
+                data=excel_file,
+                file_name=f"azure_costs_{selected_year}_{selected_month}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
         # Graphiques
         if not df_costs.empty:
@@ -184,7 +203,6 @@ if st.button("Analyser Azure"):
             c.drawString(50, 740, f"Nombre de Resource Groups facturés : {df_costs['Resource Group'].nunique()}")
             c.drawString(50, 725, f"Coût total : {df_costs['Coût (€)'].sum():.2f} €")
 
-            # Tableau recommandations
             if not df_recs.empty:
                 rec_columns_order = ["Subscription","Catégorie","Problème","Solution","Impact","Resource Group"]
                 table_recs = Table([rec_columns_order] + df_recs[rec_columns_order].values.tolist(), colWidths=[80,70,120,120,60,70])
@@ -198,7 +216,6 @@ if st.button("Analyser Azure"):
                 table_recs.wrapOn(c,50,600)
                 table_recs.drawOn(c,50,500)
 
-            # Tableau coûts
             if not df_costs.empty:
                 cost_columns_order = ["Subscription","Resource Group","Coût (€)"]
                 df_costs_pdf = df_costs.copy()
