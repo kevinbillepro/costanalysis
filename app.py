@@ -95,6 +95,7 @@ def get_azure_data(selected_subs, sub_options):
 
     df_recs = pd.DataFrame(advisor_recs, columns=["Subscription", "Catégorie", "Problème", "Solution", "Impact", "Resource Group"])
     df_costs = pd.DataFrame(cost_data_all, columns=["Subscription", "Resource Group", "Coût (€)"])
+    df_costs["Coût (€)"] = df_costs["Coût (€)"].round(2)
     return df_recs, df_costs
 
 # ---- Bouton Analyse ----
