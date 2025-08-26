@@ -87,8 +87,12 @@ def get_azure_data(selected_subs, sub_options):
                 },
             )
             for row in cost_query.rows:
-                # Stocke en numérique arrondi à 2 chiffres
-                cost_data_all.append([sub_name, row[0], round(row[1], 2)])
+                try:
+                    cost_value = float(row[1])
+                    cost_data_all.append([sub_name, row[0], round(cost_value, 2)])
+                except (TypeError, ValueError):
+                    continue  # ignore invalid values
+
         except Exception as e:
             print(f"Erreur sur subscription {sub_name}: {e}")
 
@@ -115,17 +119,23 @@ if st.button("Analyser Azure"):
             st.dataframe(df_costs)
 
             # Graphiques
-            fig1, ax1 = plt.subplots()
-            df_costs.groupby("Resource Group")["Coût (€)"].sum().sort_values(ascending=False).head(10).plot(kind="bar", ax=ax1)
-            ax1.set_ylabel("Coût (€)")
-            ax1.set_title("Top Resource Groups par coût (30j)")
-            st.pyplot(fig1)
+            if not df_costs.empty:
+                fig1, ax1 = plt.subplots()
+                df_costs.groupby("Resource Group")["Coût (€)"].sum().sort_values(ascending=False).head(10).plot(kind="bar", ax=ax1)
+                ax1.set_ylabel("Coût (€)")
+                ax1.set_title("Top Resource Groups par coût (30j)")
+                st.pyplot(fig1)
+            else:
+                st.info("Aucune donnée de coût disponible pour les graphiques.")
 
-            fig2, ax2 = plt.subplots()
-            df_recs.groupby("Resource Group").size().sort_values(ascending=False).head(10).plot(kind="bar", ax=ax2)
-            ax2.set_ylabel("Nombre de recommandations")
-            ax2.set_title("Top Resource Groups avec recommandations")
-            st.pyplot(fig2)
+            if not df_recs.empty:
+                fig2, ax2 = plt.subplots()
+                df_recs.groupby("Resource Group").size().sort_values(ascending=False).head(10).plot(kind="bar", ax=ax2)
+                ax2.set_ylabel("Nombre de recommandations")
+                ax2.set_title("Top Resource Groups avec recommandations")
+                st.pyplot(fig2)
+            else:
+                st.info("Aucune recommandation disponible pour les graphiques.")
 
             # ---- Génération PDF ----
             def generate_pdf(df_recs, df_costs):
@@ -141,33 +151,35 @@ if st.button("Analyser Azure"):
                 c.drawString(50, 725, f"Coût total (30j) : {df_costs['Coût (€)'].sum():.2f} €")
 
                 # Tableau Recs
-                rec_columns_order = ["Subscription","Catégorie","Problème","Solution","Impact","Resource Group"]
-                table_recs = Table([rec_columns_order] + df_recs[rec_columns_order].values.tolist(), colWidths=[80,70,120,120,60,70])
-                table_recs.setStyle(TableStyle([
-                    ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#2E86C1")),
-                    ("TEXTCOLOR",(0,0),(-1,0),colors.white),
-                    ("ALIGN",(0,0),(-1,-1),"CENTER"),
-                    ("GRID",(0,0),(-1,-1),0.25,colors.grey),
-                    ("FONTSIZE",(0,0),(-1,-1),5)
-                ]))
-                table_recs.wrapOn(c,50,600)
-                table_recs.drawOn(c,50,500)
+                if not df_recs.empty:
+                    rec_columns_order = ["Subscription","Catégorie","Problème","Solution","Impact","Resource Group"]
+                    table_recs = Table([rec_columns_order] + df_recs[rec_columns_order].values.tolist(), colWidths=[80,70,120,120,60,70])
+                    table_recs.setStyle(TableStyle([
+                        ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#2E86C1")),
+                        ("TEXTCOLOR",(0,0),(-1,0),colors.white),
+                        ("ALIGN",(0,0),(-1,-1),"CENTER"),
+                        ("GRID",(0,0),(-1,-1),0.25,colors.grey),
+                        ("FONTSIZE",(0,0),(-1,-1),5)
+                    ]))
+                    table_recs.wrapOn(c,50,600)
+                    table_recs.drawOn(c,50,500)
 
                 # Tableau Coûts – version PDF formatée
-                cost_columns_order = ["Subscription","Resource Group","Coût (€)"]
-                df_costs_pdf = df_costs.copy()
-                df_costs_pdf["Coût (€)"] = df_costs_pdf["Coût (€)"].apply(lambda x: f"{x:.2f}")
+                if not df_costs.empty:
+                    cost_columns_order = ["Subscription","Resource Group","Coût (€)"]
+                    df_costs_pdf = df_costs.copy()
+                    df_costs_pdf["Coût (€)"] = df_costs_pdf["Coût (€)"].apply(lambda x: f"{x:.2f}")
 
-                table_costs = Table([cost_columns_order] + df_costs_pdf[cost_columns_order].values.tolist(), colWidths=[100,150,100])
-                table_costs.setStyle(TableStyle([
-                    ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#27AE60")),
-                    ("TEXTCOLOR",(0,0),(-1,0),colors.white),
-                    ("ALIGN",(0,0),(-1,-1),"CENTER"),
-                    ("GRID",(0,0),(-1,-1),0.25,colors.grey),
-                    ("FONTSIZE",(0,0),(-1,-1),6)
-                ]))
-                table_costs.wrapOn(c,50,400)
-                table_costs.drawOn(c,50,300)
+                    table_costs = Table([cost_columns_order] + df_costs_pdf[cost_columns_order].values.tolist(), colWidths=[100,150,100])
+                    table_costs.setStyle(TableStyle([
+                        ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#27AE60")),
+                        ("TEXTCOLOR",(0,0),(-1,0),colors.white),
+                        ("ALIGN",(0,0),(-1,-1),"CENTER"),
+                        ("GRID",(0,0),(-1,-1),0.25,colors.grey),
+                        ("FONTSIZE",(0,0),(-1,-1),6)
+                    ]))
+                    table_costs.wrapOn(c,50,400)
+                    table_costs.drawOn(c,50,300)
 
                 c.save()
                 buffer.seek(0)
